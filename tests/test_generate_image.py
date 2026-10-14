@@ -15,7 +15,7 @@ from product_shoot.openai_client import get_openai_client
 load_dotenv()
 
 # 纯色实拍、印花 logo 从路径读取，不限制宽高；生成图写到 data/ 方便查看
-PRODUCT_IMAGE = Path(os.environ.get("TEST_PRODUCT_IMAGE", "tests/fixtures/product.png"))
+PRODUCT_IMAGE = Path(os.environ.get("TEST_PRODUCT_IMAGE", "tests/fixtures/product.jpeg"))
 LOGO_IMAGE = Path(os.environ.get("TEST_LOGO_IMAGE", "tests/fixtures/logo.png"))
 OUTPUT_DIR = Path("data/test_output")
 
