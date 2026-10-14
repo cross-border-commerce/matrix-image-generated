@@ -1,6 +1,6 @@
 # matrix-image-generated
 
-印花：上传 logo 和工厂纯色实拍图，生成带 logo 的商品图。
+印花：上传印花 logo 和工厂纯色实拍图，按实拍 × 印花全组合生成带 logo 的商品图。
 
 换装：独立接口上传商品成衣图和模特参考图，把衣服穿到模特身上。
 
@@ -53,9 +53,11 @@ uv run uvicorn api.app:create_default_app --factory --app-dir src --host 0.0.0.0
 
 `POST /jobs`（multipart）
 
-- `logo`：1 张印花 logo（png / jpg / webp）
+- `logos`：1 张或多张印花 logo（png / jpg / webp）
 - `products`：1 张或多张纯色实拍
 - `placement`：可选，默认 `chest_center`
+
+一次任务对实拍 × 印花做全组合，每对生成一张商品图。
 
 `GET /jobs/{id}` 查询状态和商品图 URL。
 
@@ -76,7 +78,8 @@ uv run uvicorn api.app:create_default_app --factory --app-dir src --host 0.0.0.0
 
 ```bash
 curl -X POST http://127.0.0.1:8000/jobs \
-  -F logo=@logo.png \
+  -F logos=@brand.png \
+  -F logos=@mark.png \
   -F products=@red.png \
   -F products=@blue.png \
   -F placement=chest_center

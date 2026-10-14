@@ -12,8 +12,16 @@ def test_ingest_rejects_empty_product_list(tmp_path: Path) -> None:
     """没有实拍图时拒绝入库。"""
     logo = write_png(tmp_path / "logo.png")
 
-    with pytest.raises(IngestError, match="at least one"):
-        ingest(logo=logo, products=[])
+    with pytest.raises(IngestError, match="at least one product"):
+        ingest(logos=[logo], products=[])
+
+
+def test_ingest_rejects_empty_logo_list(tmp_path: Path) -> None:
+    """没有印花图时拒绝入库。"""
+    product = write_png(tmp_path / "red.png")
+
+    with pytest.raises(IngestError, match="at least one logo"):
+        ingest(logos=[], products=[product])
 
 
 def test_ingest_rejects_unsupported_logo_type(tmp_path: Path) -> None:
@@ -23,19 +31,21 @@ def test_ingest_rejects_unsupported_logo_type(tmp_path: Path) -> None:
     product = write_png(tmp_path / "red.png")
 
     with pytest.raises(IngestError, match="unsupported"):
-        ingest(logo=logo, products=[product])
+        ingest(logos=[logo], products=[product])
 
 
-def test_ingest_uses_default_placement_and_keeps_product_names(tmp_path: Path) -> None:
-    """默认贴标位置为胸前，商品名取文件名。"""
-    logo = write_png(tmp_path / "logo.png")
+def test_ingest_uses_default_placement_and_keeps_names(tmp_path: Path) -> None:
+    """默认贴标位置为胸前，印花名和实拍名取文件名。"""
+    brand = write_png(tmp_path / "brand.png")
+    mark = write_png(tmp_path / "mark.png")
     red = write_png(tmp_path / "red.png")
     blue = write_png(tmp_path / "blue.jpg")
 
-    state = ingest(logo=logo, products=[red, blue])
+    state = ingest(logos=[brand, mark], products=[red, blue])
 
-    assert state["logo_path"] == logo
     assert state["placement"] == "chest_center"
+    assert [item["name"] for item in state["logos"]] == ["brand", "mark"]
+    assert [item["photo_path"] for item in state["logos"]] == [brand, mark]
     assert [item["name"] for item in state["products"]] == ["red", "blue"]
     assert [item["photo_path"] for item in state["products"]] == [red, blue]
 

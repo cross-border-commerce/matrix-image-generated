@@ -17,23 +17,29 @@ def _client(tmp_path: Path) -> TestClient:
     return TestClient(create_app(data_dir=tmp_path, editor=RecordingEditor()))
 
 
-def test_create_job_requires_product_photos(tmp_path: Path) -> None:
-    """只上传 logo、没有实拍时返回 422。"""
+def test_create_job_requires_logo_and_product_photos(tmp_path: Path) -> None:
+    """缺少印花或实拍时返回 422。"""
     client = _client(tmp_path)
-    response = client.post(
+    missing_products = client.post(
         "/jobs",
-        files=[("logo", ("logo.png", MINIMAL_PNG, "image/png"))],
+        files=[("logos", ("brand.png", MINIMAL_PNG, "image/png"))],
     )
-    assert response.status_code == 422
+    assert missing_products.status_code == 422
+    missing_logos = client.post(
+        "/jobs",
+        files=[("products", ("red.png", MINIMAL_PNG, "image/png"))],
+    )
+    assert missing_logos.status_code == 422
 
 
-def test_create_job_generates_one_image_per_product(tmp_path: Path) -> None:
-    """两张实拍生成两张商品图，可通过 URL 下载。"""
+def test_create_job_generates_one_image_per_pair(tmp_path: Path) -> None:
+    """两张实拍 × 两张印花生成四张商品图，可通过 URL 下载。"""
     client = _client(tmp_path)
     response = client.post(
         "/jobs",
         files=[
-            ("logo", ("logo.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("mark.png", MINIMAL_PNG, "image/png")),
             ("products", ("red.png", MINIMAL_PNG, "image/png")),
             ("products", ("blue.png", MINIMAL_PNG, "image/png")),
         ],
@@ -46,7 +52,13 @@ def test_create_job_generates_one_image_per_product(tmp_path: Path) -> None:
     assert job.status_code == 200
     body = job.json()
     assert body["status"] == "succeeded"
-    assert [item["name"] for item in body["product_images"]] == ["red", "blue"]
+    pairs = [(item["product"], item["logo"]) for item in body["product_images"]]
+    assert pairs == [
+        ("red", "brand"),
+        ("red", "mark"),
+        ("blue", "brand"),
+        ("blue", "mark"),
+    ]
 
     first = client.get(body["product_images"][0]["url"])
     assert first.status_code == 200

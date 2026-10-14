@@ -10,7 +10,8 @@ JobStatus = Literal["pending", "running", "succeeded", "failed"]
 
 @dataclass
 class JobImage:
-    name: str
+    product: str
+    logo: str
     filename: str
 
 

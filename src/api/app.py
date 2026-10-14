@@ -38,7 +38,8 @@ def create_app(
             "placement": job.placement,
             "product_images": [
                 {
-                    "name": image.name,
+                    "product": image.product,
+                    "logo": image.logo,
                     "url": f"/jobs/{job.id}/files/{image.filename}",
                 }
                 for image in job.product_images
@@ -49,9 +50,10 @@ def create_app(
     def run_job(job_id: str, placement: str | None) -> None:
         store.update(job_id, status="running")
         root = job_dir(job_id)
-        logo = next((root / "logo").iterdir())
-        order = (root / "product_order.txt").read_text().splitlines()
-        products = [root / "products" / name for name in order if name]
+        logo_order = (root / "logo_order.txt").read_text().splitlines()
+        product_order = (root / "product_order.txt").read_text().splitlines()
+        logos = [root / "logos" / name for name in logo_order if name]
+        products = [root / "products" / name for name in product_order if name]
         output_dir = root / "out"
         try:
             graph = build_graph(
@@ -60,13 +62,17 @@ def create_app(
             )
             result = graph.invoke(
                 {
-                    "logo_path": logo,
+                    "logos": logos,
                     "products": products,
                     "placement": placement,
                 }
             )
             images = [
-                JobImage(name=item["name"], filename=Path(item["path"]).name)
+                JobImage(
+                    product=item["product_name"],
+                    logo=item["logo_name"],
+                    filename=Path(item["path"]).name,
+                )
                 for item in result["product_images"]
             ]
             store.update(
@@ -83,20 +89,27 @@ def create_app(
     @app.post("/jobs", status_code=202)
     async def create_job(
         background: BackgroundTasks,
-        logo: UploadFile = File(...),
+        logos: list[UploadFile] = File(...),
         products: list[UploadFile] = File(...),
         placement: str | None = Form(None),
     ) -> dict:
+        if not logos:
+            raise HTTPException(status_code=422, detail="at least one logo photo is required")
         if not products:
             raise HTTPException(status_code=422, detail="at least one product photo is required")
 
         job = store.create()
         root = job_dir(job.id)
-        (root / "logo").mkdir(parents=True)
+        (root / "logos").mkdir(parents=True)
         (root / "products").mkdir(parents=True)
 
-        logo_path = root / "logo" / (logo.filename or "logo.png")
-        logo_path.write_bytes(await logo.read())
+        logo_names: list[str] = []
+        for index, logo in enumerate(logos):
+            dest = root / "logos" / (logo.filename or f"logo-{index}.png")
+            dest.write_bytes(await logo.read())
+            logo_names.append(dest.name)
+        (root / "logo_order.txt").write_text("\n".join(logo_names))
+
         product_names: list[str] = []
         for index, product in enumerate(products):
             dest = root / "products" / (product.filename or f"product-{index}.png")

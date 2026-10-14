@@ -8,12 +8,13 @@ class ProductPhoto(TypedDict):
 
 
 class ProductImage(TypedDict):
-    name: str
+    product_name: str
+    logo_name: str
     path: Path
 
 
 class GraphState(TypedDict, total=False):
-    logo_path: Path
+    logos: list[Path] | list[ProductPhoto]
     products: list[Path] | list[ProductPhoto]
     placement: str
     product_images: list[ProductImage]

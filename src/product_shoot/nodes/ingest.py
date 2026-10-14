@@ -15,20 +15,23 @@ def _require_image(path: Path, label: str) -> None:
 
 
 def ingest(
-    logo: Path,
+    logos: list[Path],
     products: list[Path],
     placement: str | None = None,
 ) -> dict:
+    if not logos:
+        raise IngestError("at least one logo photo is required")
     if not products:
         raise IngestError("at least one product photo is required")
 
-    _require_image(logo, "logo")
+    for logo in logos:
+        _require_image(logo, "logo")
     for product in products:
         _require_image(product, "product")
 
     return {
-        "logo_path": logo,
         "placement": placement or DEFAULT_PLACEMENT,
+        "logos": [{"name": logo.stem, "photo_path": logo} for logo in logos],
         "products": [
             {"name": product.stem, "photo_path": product} for product in products
         ],

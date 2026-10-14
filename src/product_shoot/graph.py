@@ -17,29 +17,47 @@ def build_graph(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     def ingest_node(state: GraphState) -> GraphState:
+        raw_logos = state["logos"]
         raw_products = state["products"]
-        if raw_products and isinstance(raw_products[0], dict):
-            paths = [item["photo_path"] for item in raw_products]
-        else:
-            paths = list(raw_products)
+        logos = (
+            [item["photo_path"] for item in raw_logos]
+            if raw_logos and isinstance(raw_logos[0], dict)
+            else list(raw_logos)
+        )
+        products = (
+            [item["photo_path"] for item in raw_products]
+            if raw_products and isinstance(raw_products[0], dict)
+            else list(raw_products)
+        )
         return ingest(
-            logo=state["logo_path"],
-            products=paths,
+            logos=logos,
+            products=products,
             placement=state.get("placement"),
         )
 
     def generate_node(state: GraphState) -> GraphState:
         prompt = render_prompt(state["placement"])
         images = []
-        for item in state["products"]:
-            photo: ProductPhoto = item  # type: ignore[assignment]
-            image_bytes = editor.edit(
-                [photo["photo_path"], state["logo_path"]],
-                prompt,
-            )
-            dest = output_dir / f"{photo['name']}.png"
-            dest.write_bytes(image_bytes)
-            images.append({"name": photo["name"], "path": dest})
+        for product in state["products"]:
+            product_photo: ProductPhoto = product  # type: ignore[assignment]
+            for logo in state["logos"]:
+                logo_photo: ProductPhoto = logo  # type: ignore[assignment]
+                image_bytes = editor.edit(
+                    [product_photo["photo_path"], logo_photo["photo_path"]],
+                    prompt,
+                )
+                dest = (
+                    output_dir
+                    / f"{product_photo['name']}__{logo_photo['name']}.png"
+                )
+                dest.write_bytes(image_bytes)
+                images.append(
+                    {
+                        "product_name": product_photo["name"],
+                        "logo_name": logo_photo["name"],
+                        "path": dest,
+                    }
+                )
         return {"product_images": images}
 
     builder = StateGraph(GraphState)
