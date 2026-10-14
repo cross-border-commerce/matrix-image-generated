@@ -1,0 +1,37 @@
+[project]
+name = "matrix-image-generated"
+version = "0.1.0"
+description = "Generate product images by applying a print logo onto solid-color factory photos"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.12",
+    "langgraph>=0.2",
+    "openai>=1.50",
+    "httpx>=0.27",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: 调用真实生图接口，需要 .env 中的密钥",
+]
