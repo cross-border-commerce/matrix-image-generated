@@ -17,3 +17,15 @@ class GraphState(TypedDict, total=False):
     products: list[Path] | list[ProductPhoto]
     placement: str
     product_images: list[ProductImage]
+
+
+class TryOnImage(TypedDict):
+    product_name: str
+    model_name: str
+    path: Path
+
+
+class TryOnState(TypedDict, total=False):
+    products: list[Path] | list[ProductPhoto]
+    models: list[Path] | list[ProductPhoto]
+    try_on_images: list[TryOnImage]

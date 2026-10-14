@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from product_shoot.nodes.ingest import IngestError, ingest
+from product_shoot.nodes.ingest import IngestError, ingest, ingest_try_on
 from tests.image_helpers import write_png
 
 
@@ -38,3 +38,43 @@ def test_ingest_uses_default_placement_and_keeps_product_names(tmp_path: Path) -
     assert state["placement"] == "chest_center"
     assert [item["name"] for item in state["products"]] == ["red", "blue"]
     assert [item["photo_path"] for item in state["products"]] == [red, blue]
+
+
+def test_ingest_try_on_rejects_empty_product_list(tmp_path: Path) -> None:
+    """没有商品图时拒绝入库。"""
+    model = write_png(tmp_path / "front.png")
+
+    with pytest.raises(IngestError, match="at least one product"):
+        ingest_try_on(products=[], models=[model])
+
+
+def test_ingest_try_on_rejects_empty_model_list(tmp_path: Path) -> None:
+    """没有模特图时拒绝入库。"""
+    product = write_png(tmp_path / "red.png")
+
+    with pytest.raises(IngestError, match="at least one model"):
+        ingest_try_on(products=[product], models=[])
+
+
+def test_ingest_try_on_rejects_unsupported_model_type(tmp_path: Path) -> None:
+    """模特图不是 png/jpg/webp 时拒绝。"""
+    product = write_png(tmp_path / "red.png")
+    model = tmp_path / "front.gif"
+    model.write_bytes(b"gif")
+
+    with pytest.raises(IngestError, match="unsupported"):
+        ingest_try_on(products=[product], models=[model])
+
+
+def test_ingest_try_on_keeps_product_and_model_names(tmp_path: Path) -> None:
+    """商品名和模特名取文件名。"""
+    red = write_png(tmp_path / "red.png")
+    blue = write_png(tmp_path / "blue.jpg")
+    front = write_png(tmp_path / "front.png")
+
+    state = ingest_try_on(products=[red, blue], models=[front])
+
+    assert [item["name"] for item in state["products"]] == ["red", "blue"]
+    assert [item["name"] for item in state["models"]] == ["front"]
+    assert [item["photo_path"] for item in state["products"]] == [red, blue]
+    assert [item["photo_path"] for item in state["models"]] == [front]

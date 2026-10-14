@@ -33,3 +33,22 @@ def ingest(
             {"name": product.stem, "photo_path": product} for product in products
         ],
     }
+
+
+def ingest_try_on(products: list[Path], models: list[Path]) -> dict:
+    if not products:
+        raise IngestError("at least one product photo is required")
+    if not models:
+        raise IngestError("at least one model photo is required")
+
+    for product in products:
+        _require_image(product, "product")
+    for model in models:
+        _require_image(model, "model")
+
+    return {
+        "products": [
+            {"name": product.stem, "photo_path": product} for product in products
+        ],
+        "models": [{"name": model.stem, "photo_path": model} for model in models],
+    }

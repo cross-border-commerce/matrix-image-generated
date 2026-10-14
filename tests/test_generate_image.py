@@ -15,8 +15,8 @@ from product_shoot.openai_client import get_openai_client
 load_dotenv()
 
 # 纯色实拍、印花 logo 从路径读取，不限制宽高；生成图写到 data/ 方便查看
-PRODUCT_IMAGE = Path(os.environ.get("TEST_PRODUCT_IMAGE", "tests/fixtures/product.jpeg"))
-LOGO_IMAGE = Path(os.environ.get("TEST_LOGO_IMAGE", "tests/fixtures/logo.png"))
+PRODUCT_IMAGE = Path(os.environ.get("TEST_PRODUCT_IMAGE", "tests/fixtures/realshot/white.jpeg"))
+LOGO_IMAGE = Path(os.environ.get("TEST_LOGO_IMAGE", "tests/fixtures/logo/logo.png"))
 OUTPUT_DIR = Path("data/test_output")
 
 
@@ -28,7 +28,7 @@ def _has_api_key() -> bool:
 @pytest.mark.skipif(not _has_api_key(), reason="未配置 OPENAI_API_KEY，跳过真实生图")
 @pytest.mark.skipif(
     not PRODUCT_IMAGE.is_file() or not LOGO_IMAGE.is_file(),
-    reason="缺少 tests/fixtures/product.png 或 tests/fixtures/logo.png",
+    reason="缺少 tests/fixtures/realshot/white.jpeg 或 tests/fixtures/logo/logo.png",
 )
 def test_image_editor_downloads_when_response_has_url() -> None:
     """调用真实 images.edit：参考图为路径中的实拍和 logo。网关返回 url 时把图下载下来。"""

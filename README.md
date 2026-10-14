@@ -1,8 +1,10 @@
 # matrix-image-generated
 
-第一阶段：上传印花 logo 和工厂纯色实拍图，生成带 logo 的商品图。
+印花：上传 logo 和工厂纯色实拍图，生成带 logo 的商品图。
 
-编排用 LangGraph，生图用 OpenAI `images.edit`。系统提示词描述助手角色；生图提示词由开发者写模板，运行时只替换 `{placement}` 等变量。
+换装：独立接口上传商品成衣图和模特参考图，把衣服穿到模特身上。
+
+编排用 LangGraph，生图用 OpenAI `images.edit`。印花生图提示词由开发者写模板，运行时只替换 `{placement}` 等变量。换装提示词固定，不插变量。
 
 ## 环境与依赖（uv）
 
@@ -59,6 +61,17 @@ uv run uvicorn api.app:create_default_app --factory --app-dir src --host 0.0.0.0
 
 `GET /jobs/{id}/files/{filename}` 下载生成图。
 
+`POST /try-on-jobs`（multipart）
+
+- `products`：1 张或多张商品成衣图（png / jpg / webp）
+- `models`：1 张或多张模特参考图
+
+一次任务对商品图 × 模特图做全组合，每对生成一张换装图。
+
+`GET /try-on-jobs/{id}` 查询状态和换装图 URL。
+
+`GET /try-on-jobs/{id}/files/{filename}` 下载换装图。
+
 示例：
 
 ```bash
@@ -67,6 +80,12 @@ curl -X POST http://127.0.0.1:8000/jobs \
   -F products=@red.png \
   -F products=@blue.png \
   -F placement=chest_center
+
+curl -X POST http://127.0.0.1:8000/try-on-jobs \
+  -F products=@red.png \
+  -F products=@blue.png \
+  -F models=@front.png \
+  -F models=@side.png
 ```
 
 ## 测试
@@ -81,9 +100,10 @@ uv run pytest
 
 真实生图会读取本地文件（不限制宽高）：
 
-- `tests/fixtures/product.png`：工厂纯色实拍
-- `tests/fixtures/logo.png`：印花 logo
+- `tests/fixtures/realshot/`：工厂纯色实拍 / 商品成衣图
+- `tests/fixtures/logo/`：印花 logo
+- `tests/fixtures/reference/`：模特参考图（换装 integration 用）
 
-也可用环境变量 `TEST_PRODUCT_IMAGE`、`TEST_LOGO_IMAGE` 指向其它路径。缺少文件时该用例会 skip。
+也可用环境变量 `TEST_PRODUCT_IMAGE`、`TEST_LOGO_IMAGE`、`TEST_MODEL_IMAGE` 指向其它路径。缺少文件时该用例会 skip。
 
-生图结果写在 `data/test_output/generated_product.png`。
+印花结果写在 `data/test_output/generated_product.png`，换装结果写在 `data/test_output/try_on.png`。

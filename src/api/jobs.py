@@ -15,11 +15,19 @@ class JobImage:
 
 
 @dataclass
+class TryOnJobImage:
+    product: str
+    model: str
+    filename: str
+
+
+@dataclass
 class Job:
     id: str
     status: JobStatus = "pending"
     placement: str | None = None
     product_images: list[JobImage] = field(default_factory=list)
+    try_on_images: list[TryOnJobImage] = field(default_factory=list)
     error: str | None = None
 
 

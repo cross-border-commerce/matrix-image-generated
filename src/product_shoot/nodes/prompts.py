@@ -21,3 +21,14 @@ IMAGE_PROMPT_TEMPLATE = (
 def render_image_prompt(placement: str) -> str:
     label = PLACEMENT_LABELS.get(placement, placement)
     return IMAGE_PROMPT_TEMPLATE.format(placement=label)
+
+
+TRY_ON_PROMPT = (
+    "第一张参考图是模特图。"
+    "第二张参考图是商品成衣图。"
+    "把第二张图中的服装穿到第一张图的模特身上。"
+    "保持模特的脸、身材、姿势、背景和光线不变，只替换服装。"
+    "服装贴合身体结构、面料褶皱和光影透视，"
+    "保留商品的款式、颜色、面料质感和印花图案。"
+    "不要添加文字、水印、额外配饰或品牌标识。"
+)
