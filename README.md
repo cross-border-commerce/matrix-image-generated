@@ -79,4 +79,11 @@ uv run pytest -m "not integration"
 uv run pytest
 ```
 
+真实生图会读取本地文件（不限制宽高）：
+
+- `tests/fixtures/product.png`：工厂纯色实拍
+- `tests/fixtures/logo.png`：印花 logo
+
+也可用环境变量 `TEST_PRODUCT_IMAGE`、`TEST_LOGO_IMAGE` 指向其它路径。缺少文件时该用例会 skip。
+
 生图结果写在 `data/test_output/generated_product.png`。
