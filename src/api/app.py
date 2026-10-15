@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from api.jobs import Job, JobImage, JobStore, TryOnJobImage
 from product_shoot.config import DEFAULT_PLACEMENT
@@ -17,7 +19,6 @@ from product_shoot.pairing import (
     expand_generate_work_items,
     expand_try_on_work_items,
     group_products,
-    pair_models,
 )
 
 
@@ -73,7 +74,13 @@ def _parse_assignments(raw: str | None) -> dict[str, str] | None:
             status_code=422,
             detail="apparelColorAssignments must be a JSON object",
         )
-    return {str(key): str(value) for key, value in data.items()}
+    parsed: dict = {}
+    for key, value in data.items():
+        if isinstance(value, dict):
+            parsed[str(key)] = {str(inner_key): str(inner_value) for inner_key, inner_value in value.items()}
+        else:
+            parsed[str(key)] = str(value)
+    return parsed
 
 
 def create_app(
@@ -84,6 +91,13 @@ def create_app(
     store = JobStore()
     try_on_store = JobStore()
     app = FastAPI(title="product-shoot")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     def resolve_editor() -> ImageEditor:
         if editor is not None:
@@ -237,18 +251,36 @@ def create_app(
         output_dir = root / "out"
         try:
             ingest_try_on(products=product_paths, models=model_paths)
-            logos = []
-            if logo_paths:
-                logos = ingest(logos=logo_paths, products=product_paths)["logos"]
+            if not logo_paths:
+                raise IngestError("at least one logo photo is required")
+            logos = ingest(logos=logo_paths, products=product_paths)["logos"]
             groups = group_products(
                 _photos(root, "products", product_order, use_stem=False)
             )
             models = _photos(root, "models", model_order, use_stem=True)
-            pairs = pair_models(models, groups, assignments=assignments)
-            work_items = expand_try_on_work_items(pairs, logos=logos or None)
+            work_items = expand_try_on_work_items(
+                logos,
+                models,
+                groups,
+                assignments=assignments,
+            )
+            def on_image(item: dict) -> None:
+                job = try_on_store.get(job_id)
+                current = list(job.try_on_images) if job else []
+                current.append(
+                    TryOnJobImage(
+                        product=item["product_name"],
+                        model=item["model_name"],
+                        filename=Path(item["path"]).name,
+                        logo=item.get("logo_name"),
+                    )
+                )
+                try_on_store.update(job_id, try_on_images=current)
+
             graph = build_try_on_graph(
                 editor=resolve_editor(),
                 output_dir=output_dir,
+                on_image=on_image,
             )
             result = graph.invoke({"work_items": work_items})
             images = [
@@ -271,13 +303,15 @@ def create_app(
         background: BackgroundTasks,
         products: list[UploadFile] = File(...),
         models: list[UploadFile] = File(...),
-        logos: list[UploadFile] | None = File(None),
+        logos: list[UploadFile] = File(...),
         apparelColorAssignments: str | None = Form(None),
     ) -> dict:
         if not products:
             raise HTTPException(status_code=422, detail="at least one product photo is required")
         if not models:
             raise HTTPException(status_code=422, detail="at least one model photo is required")
+        if not logos:
+            raise HTTPException(status_code=422, detail="at least one logo photo is required")
 
         assignments = _parse_assignments(apparelColorAssignments)
         job = try_on_store.create()
@@ -286,9 +320,8 @@ def create_app(
         model_names = await _save_uploads(root / "models", models, "model")
         (root / "product_order.txt").write_text("\n".join(product_names))
         (root / "model_order.txt").write_text("\n".join(model_names))
-        if logos:
-            logo_names = await _save_uploads(root / "logos", logos, "logo")
-            (root / "logo_order.txt").write_text("\n".join(logo_names))
+        logo_names = await _save_uploads(root / "logos", logos, "logo")
+        (root / "logo_order.txt").write_text("\n".join(logo_names))
         if assignments:
             (root / "assignments.json").write_text(
                 json.dumps(assignments, ensure_ascii=False)
@@ -315,6 +348,10 @@ def create_app(
         if not path.is_file():
             raise HTTPException(status_code=404, detail="file not found")
         return FileResponse(path)
+
+    frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if frontend_dist.is_dir():
+        app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 
     return app
 

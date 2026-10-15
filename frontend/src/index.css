@@ -1,0 +1,31 @@
+:root {
+  color: #1c1915;
+  background: #f3eee4;
+  font-family: "Instrument Sans", "Noto Sans SC", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #fbe7d4 0%, transparent 55%),
+    radial-gradient(900px 400px at 100% 0%, #e7efe4 0%, transparent 50%),
+    #f3eee4;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}

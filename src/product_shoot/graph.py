@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
@@ -45,7 +46,11 @@ def build_graph(
     return builder.compile()
 
 
-def build_try_on_graph(editor: ImageEditor, output_dir: Path):
+def build_try_on_graph(
+    editor: ImageEditor,
+    output_dir: Path,
+    on_image: Callable[[dict[str, Any]], None] | None = None,
+):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     def try_on_node(state: TryOnState) -> TryOnState:
@@ -65,14 +70,15 @@ def build_try_on_graph(editor: ImageEditor, output_dir: Path):
             image_bytes = editor.edit(references, prompt)
             dest = output_dir / filename
             dest.write_bytes(image_bytes)
-            images.append(
-                {
-                    "product_name": item["product_name"],
-                    "model_name": item["model_name"],
-                    "logo_name": logo_name,
-                    "path": dest,
-                }
-            )
+            generated = {
+                "product_name": item["product_name"],
+                "model_name": item["model_name"],
+                "logo_name": logo_name,
+                "path": dest,
+            }
+            images.append(generated)
+            if on_image is not None:
+                on_image(generated)
         return {"try_on_images": images}
 
     builder = StateGraph(TryOnState)

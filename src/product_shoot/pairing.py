@@ -55,18 +55,22 @@ def group_products(products: list[ProductPhoto]) -> list[dict]:
     parents = [_logical_parent(item["name"]) for item in products]
 
     stem_index: dict[str, int] = {}
-    dir_index: dict[str, int] = {}
-    for i, (stem, parent) in enumerate(zip(stems, parents)):
+    for i, stem in enumerate(stems):
         if stem:
             if stem in stem_index:
                 union(stem_index[stem], i)
             else:
                 stem_index[stem] = i
+
+    dir_files: dict[str, list[int]] = {}
+    for i, parent in enumerate(parents):
         if parent is not None:
-            if parent in dir_index:
-                union(dir_index[parent], i)
-            else:
-                dir_index[parent] = i
+            dir_files.setdefault(parent, []).append(i)
+    for indexes in dir_files.values():
+        unique_stems = {stems[i] for i in indexes if stems[i]}
+        if len(unique_stems) <= 1:
+            for other in indexes[1:]:
+                union(indexes[0], other)
 
     buckets: dict[int, list[int]] = {}
     for i in range(n):
@@ -95,16 +99,13 @@ def pair_models(
     if not models or not groups:
         return []
 
-    if len(groups) > len(models):
-        return [(models[i % len(models)], groups[i]) for i in range(len(groups))]
-
     by_id = {group["id"]: group for group in groups}
     pairs = []
     for i, model in enumerate(models):
         group = groups[i % len(groups)]
         if assignments:
             assigned = assignments.get(model["name"])
-            if assigned is not None:
+            if assigned in by_id:
                 group = by_id[assigned]
         pairs.append((model, group))
     return pairs
@@ -129,27 +130,34 @@ def expand_generate_work_items(
     return items
 
 
+def _assignments_for_logo(
+    assignments: dict | None,
+    logo_name: str,
+) -> dict[str, str] | None:
+    if not assignments:
+        return None
+    nested = assignments.get(logo_name)
+    if isinstance(nested, dict):
+        return {str(key): str(value) for key, value in nested.items()}
+    if all(not isinstance(value, dict) for value in assignments.values()):
+        return {str(key): str(value) for key, value in assignments.items()}
+    return None
+
+
 def expand_try_on_work_items(
-    pairs: list[tuple[ProductPhoto, dict]],
-    logos: list[ProductPhoto] | None = None,
+    logos: list[ProductPhoto],
+    models: list[ProductPhoto],
+    groups: list[dict],
+    assignments: dict | None = None,
 ) -> list[dict]:
     items = []
-    if not logos:
+    for logo in logos:
+        pairs = pair_models(
+            models,
+            groups,
+            assignments=_assignments_for_logo(assignments, logo["name"]),
+        )
         for model, group in pairs:
-            items.append(
-                {
-                    "product_name": group["id"],
-                    "model_name": model["name"],
-                    "product_paths": [photo["photo_path"] for photo in group["photos"]],
-                    "model_path": model["photo_path"],
-                    "logo_name": None,
-                    "logo_path": None,
-                }
-            )
-        return items
-
-    for model, group in pairs:
-        for logo in logos:
             items.append(
                 {
                     "product_name": group["id"],

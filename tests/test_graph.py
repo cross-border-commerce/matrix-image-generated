@@ -167,3 +167,42 @@ def test_try_on_graph_appends_print_reference_when_work_item_has_logo(
     assert editor.calls[0][0] == [model, product, brand]
     assert editor.calls[0][1] == TRY_ON_PROMPT_WITH_PRINT
     assert "印花" in TRY_ON_PROMPT_WITH_PRINT
+
+
+def test_try_on_graph_reports_each_image_as_it_is_written(tmp_path: Path) -> None:
+    """每写出一张换装图就回调一次，供任务进度展示。"""
+    product = write_png(tmp_path / "white.png")
+    m1 = write_png(tmp_path / "m1.png")
+    m2 = write_png(tmp_path / "m2.png")
+    brand = write_png(tmp_path / "brand.png")
+    seen: list[str] = []
+
+    graph = build_try_on_graph(
+        editor=RecordingEditor(),
+        output_dir=tmp_path / "out",
+        on_image=lambda item: seen.append(Path(item["path"]).name),
+    )
+    graph.invoke(
+        {
+            "work_items": [
+                {
+                    "product_name": "white",
+                    "model_name": "m1",
+                    "product_paths": [product],
+                    "model_path": m1,
+                    "logo_name": "brand",
+                    "logo_path": brand,
+                },
+                {
+                    "product_name": "white",
+                    "model_name": "m2",
+                    "product_paths": [product],
+                    "model_path": m2,
+                    "logo_name": "brand",
+                    "logo_path": brand,
+                },
+            ]
+        }
+    )
+
+    assert seen == ["white__m1__brand.png", "white__m2__brand.png"]

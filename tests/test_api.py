@@ -99,19 +99,33 @@ def test_get_unknown_job_returns_404(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
-def test_create_try_on_job_requires_product_and_model_photos(tmp_path: Path) -> None:
-    """缺少商品图或模特图时返回 422。"""
+def test_create_try_on_job_requires_product_model_and_logo_photos(tmp_path: Path) -> None:
+    """缺少商品图、模特图或印花时返回 422。"""
     client = _client(tmp_path)
     missing_models = client.post(
         "/try-on-jobs",
-        files=[("products", ("red.png", MINIMAL_PNG, "image/png"))],
+        files=[
+            ("products", ("red.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
+        ],
     )
     assert missing_models.status_code == 422
     missing_products = client.post(
         "/try-on-jobs",
-        files=[("models", ("front.png", MINIMAL_PNG, "image/png"))],
+        files=[
+            ("models", ("front.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
+        ],
     )
     assert missing_products.status_code == 422
+    missing_logos = client.post(
+        "/try-on-jobs",
+        files=[
+            ("products", ("red.png", MINIMAL_PNG, "image/png")),
+            ("models", ("front.png", MINIMAL_PNG, "image/png")),
+        ],
+    )
+    assert missing_logos.status_code == 422
 
 
 def test_create_try_on_job_pairs_each_model_with_one_product(tmp_path: Path) -> None:
@@ -124,6 +138,7 @@ def test_create_try_on_job_pairs_each_model_with_one_product(tmp_path: Path) -> 
             ("products", ("blue.png", MINIMAL_PNG, "image/png")),
             ("models", ("front.png", MINIMAL_PNG, "image/png")),
             ("models", ("side.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
         ],
     )
     assert response.status_code == 202
@@ -138,6 +153,7 @@ def test_create_try_on_job_pairs_each_model_with_one_product(tmp_path: Path) -> 
         ("red", "front"),
         ("blue", "side"),
     ]
+    assert [item.get("logo") for item in body["try_on_images"]] == ["brand", "brand"]
 
     first = client.get(body["try_on_images"][0]["url"])
     assert first.status_code == 200
@@ -154,6 +170,7 @@ def test_create_try_on_job_groups_same_upload_directory(tmp_path: Path) -> None:
             ("products", ("white/front.jpeg", MINIMAL_PNG, "image/jpeg")),
             ("products", ("white/back.jpeg", MINIMAL_PNG, "image/jpeg")),
             ("models", ("m1.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
         ],
     )
     body = client.get(f"/try-on-jobs/{response.json()['id']}").json()
@@ -164,6 +181,7 @@ def test_create_try_on_job_groups_same_upload_directory(tmp_path: Path) -> None:
         "m1.png",
         "front.jpeg",
         "back.jpeg",
+        "brand.png",
     ]
 
 
@@ -177,6 +195,7 @@ def test_create_try_on_job_sends_grouped_views_together(tmp_path: Path) -> None:
             ("products", ("白色-正面.jpeg", MINIMAL_PNG, "image/jpeg")),
             ("products", ("白色-背面.jpeg", MINIMAL_PNG, "image/jpeg")),
             ("models", ("m1.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
         ],
     )
     assert response.status_code == 202
@@ -189,11 +208,14 @@ def test_create_try_on_job_sends_grouped_views_together(tmp_path: Path) -> None:
         "m1.png",
         "白色-正面.jpeg",
         "白色-背面.jpeg",
+        "brand.png",
     ]
 
 
-def test_create_try_on_job_cycles_models_when_more_products(tmp_path: Path) -> None:
-    """商品件数多于模特图时循环模特，忽略 apparelColorAssignments。"""
+def test_create_try_on_job_is_logo_by_reference_and_honors_assignments(
+    tmp_path: Path,
+) -> None:
+    """工作项按印花 × 参考图展开，商品再多也不循环模特，指定仍然生效。"""
     client = _client(tmp_path)
     response = client.post(
         "/try-on-jobs",
@@ -203,14 +225,42 @@ def test_create_try_on_job_cycles_models_when_more_products(tmp_path: Path) -> N
             ("products", ("navy.png", MINIMAL_PNG, "image/png")),
             ("models", ("m1.png", MINIMAL_PNG, "image/png")),
             ("models", ("m2.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
         ],
         data={"apparelColorAssignments": json.dumps({"m1": "navy", "m2": "black"})},
     )
     body = client.get(f"/try-on-jobs/{response.json()['id']}").json()
-    assert [(item["product"], item["model"]) for item in body["try_on_images"]] == [
-        ("white", "m1"),
-        ("black", "m2"),
-        ("navy", "m1"),
+    assert [(item["product"], item["model"], item.get("logo")) for item in body["try_on_images"]] == [
+        ("navy", "m1", "brand"),
+        ("black", "m2", "brand"),
+    ]
+
+
+def test_create_try_on_job_assignments_can_differ_per_logo(tmp_path: Path) -> None:
+    """同一张参考图在不同印花下可以配不同商品。"""
+    client = _client(tmp_path)
+    response = client.post(
+        "/try-on-jobs",
+        files=[
+            ("products", ("white.png", MINIMAL_PNG, "image/png")),
+            ("products", ("black.png", MINIMAL_PNG, "image/png")),
+            ("models", ("m1.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("mark.png", MINIMAL_PNG, "image/png")),
+        ],
+        data={
+            "apparelColorAssignments": json.dumps(
+                {"brand": {"m1": "black"}, "mark": {"m1": "white"}}
+            )
+        },
+    )
+    body = client.get(f"/try-on-jobs/{response.json()['id']}").json()
+    assert [
+        (item["product"], item["model"], item.get("logo"))
+        for item in body["try_on_images"]
+    ] == [
+        ("black", "m1", "brand"),
+        ("white", "m1", "mark"),
     ]
 
 
@@ -226,6 +276,7 @@ def test_create_try_on_job_uses_assignments_when_models_cover_products(
             ("products", ("black.png", MINIMAL_PNG, "image/png")),
             ("models", ("m1.png", MINIMAL_PNG, "image/png")),
             ("models", ("m2.png", MINIMAL_PNG, "image/png")),
+            ("logos", ("brand.png", MINIMAL_PNG, "image/png")),
         ],
         data={"apparelColorAssignments": json.dumps({"m1": "black", "m2": "white"})},
     )
@@ -258,8 +309,8 @@ def test_create_try_on_job_multiplies_pairs_by_prints(tmp_path: Path) -> None:
     ]
     assert triples == [
         ("white", "m1", "brand"),
-        ("white", "m1", "mark"),
         ("black", "m2", "brand"),
+        ("white", "m1", "mark"),
         ("black", "m2", "mark"),
     ]
     assert [path.name for path in editor.calls[0][0]] == [
