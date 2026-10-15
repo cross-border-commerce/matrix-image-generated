@@ -1,18 +1,19 @@
 import type { TryOnImage } from "../api";
 import type { Asset } from "../assets";
 import { downloadLogoZip } from "../download";
-import type { ProductGroup } from "../pairing";
-import { pairModels } from "../pairing";
+import type { ModelGroup, ProductGroup } from "../pairing";
+import { fileStem, pairModels } from "../pairing";
 
 type Assignments = Record<string, Record<string, string>>;
 
 type Props = {
   groups: ProductGroup[];
+  modelGroups: ModelGroup[];
   logos: Asset[];
   models: Asset[];
   products: Asset[];
   assignments: Assignments;
-  onAssign: (logoStem: string, modelName: string, groupId: string) => void;
+  onAssign: (logoStem: string, rowKey: string, groupId: string) => void;
   resultCounts: Record<string, number>;
   results: TryOnImage[];
   busy: boolean;
@@ -22,12 +23,9 @@ function previewByLogicalName(assets: Asset[], name: string): string | undefined
   return assets.find((asset) => asset.logicalName === name)?.url;
 }
 
-function previewByStem(assets: Asset[], name: string): string | undefined {
-  return assets.find((asset) => asset.stem === name)?.url;
-}
-
 export default function PairingBoard({
   groups,
+  modelGroups,
   logos,
   models,
   products,
@@ -37,23 +35,22 @@ export default function PairingBoard({
   results,
   busy,
 }: Props) {
-  const modelPhotos = models.map((asset) => ({ name: asset.stem }));
-  if (logos.length === 0 || models.length === 0 || groups.length === 0) {
+  if (logos.length === 0 || modelGroups.length === 0 || groups.length === 0) {
     return (
       <p className="pairing-empty">
-        请上传印花、实拍和参考模特后，按印花 × 参考图配置组合。
+        请上传印花、实拍和参考模特后，按一个印花配一组参考图配置组合。
       </p>
     );
   }
 
-  const total = models.length;
-
   return (
     <div className="pairing-list">
-      {logos.map((logo) => {
+      {logos.map((logo, logoIndex) => {
+        const modelGroup = modelGroups[logoIndex % modelGroups.length];
+        const total = modelGroup.photos.length;
         const done = resultCounts[logo.stem] ?? 0;
         const pairs = pairModels(
-          modelPhotos,
+          modelGroup.photos,
           groups,
           assignments[logo.stem] ?? null,
         );
@@ -64,7 +61,8 @@ export default function PairingBoard({
               <div>
                 <strong>{logo.stem}</strong>
                 <p className="logo-progress-line">
-                  总张数 {total} · 当前进度 {Math.min(done, total)} / {total}
+                  参考组 {modelGroup.id} · 总张数 {total} · 当前进度{" "}
+                  {Math.min(done, total)} / {total}
                   {busy ? "（生成中）" : ""}
                 </p>
               </div>
@@ -86,7 +84,8 @@ export default function PairingBoard({
               const selectedId = pair.group.id;
               const group =
                 groups.find((item) => item.id === selectedId) ?? pair.group;
-              const modelUrl = previewByStem(models, pair.model.name);
+              const rowKey = String(index);
+              const modelUrl = previewByLogicalName(models, pair.model.name);
               return (
                 <article
                   className="pair-row"
@@ -97,7 +96,7 @@ export default function PairingBoard({
                       <img src={modelUrl} alt={pair.model.name} />
                     ) : null}
                     <div>
-                      <strong>{pair.model.name}</strong>
+                      <strong>{fileStem(pair.model.name)}</strong>
                       <small>参考图</small>
                     </div>
                   </div>
@@ -118,7 +117,7 @@ export default function PairingBoard({
                       <select
                         value={selectedId}
                         onChange={(event) =>
-                          onAssign(logo.stem, pair.model.name, event.target.value)
+                          onAssign(logo.stem, rowKey, event.target.value)
                         }
                       >
                         {groups.map((item) => (

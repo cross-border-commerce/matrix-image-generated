@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupProducts, pairModels } from "./pairing";
+import { groupModels, groupProducts, outputCount, pairModels } from "./pairing";
 
 describe("groupProducts", () => {
   it("merges files whose stem matches after stripping view words", () => {
@@ -53,44 +53,82 @@ describe("groupProducts", () => {
   });
 });
 
+describe("groupModels", () => {
+  it("uses each subdirectory as a group", () => {
+    const groups = groupModels([
+      { name: "reference/model1/a1.jpg" },
+      { name: "reference/model1/a2.jpg" },
+      { name: "reference/model2/b1.jpg" },
+    ]);
+    expect(groups.map((group) => group.id)).toEqual(["model1", "model2"]);
+    expect(groups[0].photos.map((photo) => photo.name)).toEqual([
+      "reference/model1/a1.jpg",
+      "reference/model1/a2.jpg",
+    ]);
+  });
+
+  it("treats a flat folder of images as one group", () => {
+    const groups = groupModels([{ name: "m1.png" }, { name: "m2.png" }]);
+    expect(groups.map((group) => group.id)).toEqual(["models"]);
+    expect(groups[0].photos.map((photo) => photo.name)).toEqual([
+      "m1.png",
+      "m2.png",
+    ]);
+  });
+
+  it("treats images that share one parent folder as one group", () => {
+    const groups = groupModels([
+      { name: "reference/m1.png" },
+      { name: "reference/m2.png" },
+    ]);
+    expect(groups.map((group) => group.id)).toEqual(["reference"]);
+  });
+});
+
 describe("pairModels", () => {
-  it("pairs by index and cycles products when there are extra models", () => {
+  it("cycles products across photos in a group", () => {
     const pairs = pairModels(
-      [{ name: "m1" }, { name: "m2" }, { name: "m3" }],
-      [{ id: "white", photos: [] }, { id: "black", photos: [] }],
+      [{ name: "a1.jpg" }, { name: "a2.jpg" }, { name: "a3.jpg" }],
+      [{ id: "A", photos: [] }, { id: "B", photos: [] }],
     );
     expect(pairs.map((pair) => [pair.model.name, pair.group.id])).toEqual([
-      ["m1", "white"],
-      ["m2", "black"],
-      ["m3", "white"],
+      ["a1.jpg", "A"],
+      ["a2.jpg", "B"],
+      ["a3.jpg", "A"],
     ]);
   });
 
-  it("keeps one row per reference when there are more products", () => {
+  it("keeps one row per photo when there are extra products", () => {
     const pairs = pairModels(
-      [{ name: "m1" }, { name: "m2" }],
-      [
-        { id: "white", photos: [] },
-        { id: "black", photos: [] },
-        { id: "navy", photos: [] },
-      ],
-      { m1: "navy", m2: "black" },
+      [{ name: "a1.jpg" }, { name: "a2.jpg" }],
+      [{ id: "A", photos: [] }, { id: "B", photos: [] }, { id: "C", photos: [] }],
     );
     expect(pairs.map((pair) => [pair.model.name, pair.group.id])).toEqual([
-      ["m1", "navy"],
-      ["m2", "black"],
+      ["a1.jpg", "A"],
+      ["a2.jpg", "B"],
     ]);
   });
 
-  it("uses assignments when models cover every product", () => {
+  it("uses row assignments", () => {
     const pairs = pairModels(
-      [{ name: "m1" }, { name: "m2" }],
-      [{ id: "white", photos: [] }, { id: "black", photos: [] }],
-      { m1: "black", m2: "white" },
+      [{ name: "a1.jpg" }, { name: "a2.jpg" }],
+      [{ id: "A", photos: [] }, { id: "B", photos: [] }, { id: "C", photos: [] }],
+      { "0": "C" },
     );
     expect(pairs.map((pair) => [pair.model.name, pair.group.id])).toEqual([
-      ["m1", "black"],
-      ["m2", "white"],
+      ["a1.jpg", "C"],
+      ["a2.jpg", "B"],
     ]);
+  });
+});
+
+describe("outputCount", () => {
+  it("counts photos in the model group assigned to each logo", () => {
+    const modelGroups = [
+      { id: "a", photos: [{ name: "a1.jpg" }, { name: "a2.jpg" }] },
+      { id: "b", photos: [{ name: "b1.jpg" }] },
+    ];
+    expect(outputCount(modelGroups, 2)).toBe(3);
+    expect(outputCount(modelGroups, 3)).toBe(5);
   });
 });

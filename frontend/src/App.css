@@ -211,7 +211,7 @@
 
 .pair-row {
   display: grid;
-  grid-template-columns: 180px 32px 1fr;
+  grid-template-columns: minmax(180px, max-content) 32px 1fr;
   gap: 12px;
   align-items: center;
   padding: 10px;
@@ -224,6 +224,7 @@
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .pair-who small,

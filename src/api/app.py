@@ -18,6 +18,7 @@ from product_shoot.openai_client import get_openai_client
 from product_shoot.pairing import (
     expand_generate_work_items,
     expand_try_on_work_items,
+    group_models,
     group_products,
 )
 
@@ -257,7 +258,9 @@ def create_app(
             groups = group_products(
                 _photos(root, "products", product_order, use_stem=False)
             )
-            models = _photos(root, "models", model_order, use_stem=True)
+            models = group_models(
+                _photos(root, "models", model_order, use_stem=False)
+            )
             work_items = expand_try_on_work_items(
                 logos,
                 models,

@@ -7,6 +7,11 @@ export type ProductGroup = {
   photos: Photo[];
 };
 
+export type ModelGroup = {
+  id: string;
+  photos: Photo[];
+};
+
 export type Pair = {
   model: Photo;
   group: ProductGroup;
@@ -130,6 +135,36 @@ export function groupProducts(products: Photo[]): ProductGroup[] {
   return groups;
 }
 
+export function groupModels(models: Photo[]): ModelGroup[] {
+  if (!models.length) {
+    return [];
+  }
+
+  const buckets = new Map<string | null, Photo[]>();
+  const order: Array<string | null> = [];
+  for (const item of models) {
+    const parent = logicalParent(item.name);
+    const existing = buckets.get(parent);
+    if (existing) {
+      existing.push(item);
+    } else {
+      buckets.set(parent, [item]);
+      order.push(parent);
+    }
+  }
+
+  if (order.length <= 1) {
+    const parent = order[0] ?? null;
+    const id = parent ? parent.replaceAll("\\", "/").split("/").pop() || parent : "models";
+    return [{ id, photos: [...models] }];
+  }
+
+  return order.map((parent) => ({
+    id: parent ? parent.replaceAll("\\", "/").split("/").pop() || parent : "models",
+    photos: buckets.get(parent) ?? [],
+  }));
+}
+
 export function pairModels(
   models: Photo[],
   groups: ProductGroup[],
@@ -143,7 +178,7 @@ export function pairModels(
   return models.map((model, i) => {
     let group = groups[i % groups.length];
     if (assignments) {
-      const assigned = assignments[model.name];
+      const assigned = assignments[String(i)] ?? assignments[fileStem(model.name)];
       if (assigned !== undefined) {
         const found = byId.get(assigned);
         if (found) {
@@ -155,6 +190,13 @@ export function pairModels(
   });
 }
 
-export function outputCount(modelCount: number, logoCount: number): number {
-  return modelCount * logoCount;
+export function outputCount(modelGroups: ModelGroup[], logoCount: number): number {
+  if (!modelGroups.length || logoCount <= 0) {
+    return 0;
+  }
+  let total = 0;
+  for (let i = 0; i < logoCount; i += 1) {
+    total += modelGroups[i % modelGroups.length].photos.length;
+  }
+  return total;
 }

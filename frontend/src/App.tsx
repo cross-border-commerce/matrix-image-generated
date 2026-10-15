@@ -10,7 +10,7 @@ import {
 import PairingBoard from "./components/PairingBoard";
 import ResultGrid from "./components/ResultGrid";
 import UploadZone from "./components/UploadZone";
-import { groupProducts, outputCount } from "./pairing";
+import { groupModels, groupProducts, outputCount } from "./pairing";
 import "./App.css";
 
 export default function App() {
@@ -30,7 +30,11 @@ export default function App() {
     () => groupProducts(products.map((asset) => ({ name: asset.logicalName }))),
     [products],
   );
-  const expected = outputCount(models.length, logos.length);
+  const modelGroups = useMemo(
+    () => groupModels(models.map((asset) => ({ name: asset.logicalName }))),
+    [models],
+  );
+  const expected = outputCount(modelGroups, logos.length);
   const canGenerate =
     logos.length > 0 && products.length > 0 && models.length > 0;
   const resultCounts = useMemo(() => {
@@ -87,7 +91,9 @@ export default function App() {
         products: products.map((asset) =>
           namedFile(asset.file, asset.logicalName),
         ),
-        models: models.map((asset) => asset.file),
+        models: models.map((asset) =>
+          namedFile(asset.file, asset.logicalName),
+        ),
         logos: logos.map((asset) => asset.file),
         assignments: payloadAssignments,
       });
@@ -123,7 +129,7 @@ export default function App() {
         <p className="eyebrow">Matrix Image Studio</p>
         <h1>把印花、成衣实拍和模特参考合成电商图</h1>
         <p className="lede">
-          组合按印花 × 参考图配置：每个 logo 下为每张参考图选一件商品。输出张数 = 印花数 × 参考图数。
+          一个印花配一组参考图。子目录各算一组，没有子目录则全部算一组。组内每张参考图配一件实拍，不够就循环。
         </p>
       </header>
 
@@ -146,7 +152,7 @@ export default function App() {
         />
         <UploadZone
           title="参考模特"
-          hint="每张参考图是组合的第二维。支持选文件夹。"
+          hint="选一个目录。子目录各算一组；没有子目录则全部算一组。"
           assets={models}
           allowDirectory
           onAdd={(files) => addAssets(setModels, files)}
@@ -160,7 +166,7 @@ export default function App() {
             <h2>配对</h2>
             <p>
               {canGenerate
-                ? "第一维印花，第二维参考图。每行可改这一格配哪件商品。"
+                ? "每个印花配一组参考图。组内每张可改配哪件商品。"
                 : "请先上传印花、实拍和参考图。"}
             </p>
             {status ? <p className="status">{status}</p> : null}
@@ -202,10 +208,11 @@ export default function App() {
           resultCounts={resultCounts}
           results={results}
           busy={busy}
-          onAssign={(logoStem, modelName, groupId) =>
+          modelGroups={modelGroups}
+          onAssign={(logoStem, rowKey, groupId) =>
             setAssignments((current) => ({
               ...current,
-              [logoStem]: { ...current[logoStem], [modelName]: groupId },
+              [logoStem]: { ...current[logoStem], [rowKey]: groupId },
             }))
           }
         />

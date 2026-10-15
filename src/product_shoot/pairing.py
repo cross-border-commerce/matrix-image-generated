@@ -91,6 +91,31 @@ def group_products(products: list[ProductPhoto]) -> list[dict]:
     return groups
 
 
+def group_models(models: list[ProductPhoto]) -> list[dict]:
+    if not models:
+        return []
+
+    parents = [_logical_parent(item["name"]) for item in models]
+    buckets: dict[str | None, list[ProductPhoto]] = {}
+    order: list[str | None] = []
+    for item, parent in zip(models, parents):
+        if parent not in buckets:
+            buckets[parent] = []
+            order.append(parent)
+        buckets[parent].append(item)
+
+    if len(order) <= 1:
+        parent = order[0]
+        group_id = Path(parent).name if parent else "models"
+        return [{"id": group_id, "photos": list(models)}]
+
+    groups = []
+    for parent in order:
+        group_id = Path(parent).name if parent else "models"
+        groups.append({"id": group_id, "photos": buckets[parent]})
+    return groups
+
+
 def pair_models(
     models: list[ProductPhoto],
     groups: list[dict],
@@ -104,7 +129,9 @@ def pair_models(
     for i, model in enumerate(models):
         group = groups[i % len(groups)]
         if assignments:
-            assigned = assignments.get(model["name"])
+            assigned = assignments.get(str(i))
+            if assigned is None:
+                assigned = assignments.get(Path(model["name"]).stem)
             if assigned in by_id:
                 group = by_id[assigned]
         pairs.append((model, group))
@@ -146,24 +173,27 @@ def _assignments_for_logo(
 
 def expand_try_on_work_items(
     logos: list[ProductPhoto],
-    models: list[ProductPhoto],
+    models: list[dict],
     groups: list[dict],
     assignments: dict | None = None,
 ) -> list[dict]:
     items = []
-    for logo in logos:
+    if not logos or not models or not groups:
+        return items
+    for i, logo in enumerate(logos):
+        model_group = models[i % len(models)]
         pairs = pair_models(
-            models,
+            model_group["photos"],
             groups,
             assignments=_assignments_for_logo(assignments, logo["name"]),
         )
-        for model, group in pairs:
+        for photo, group in pairs:
             items.append(
                 {
                     "product_name": group["id"],
-                    "model_name": model["name"],
-                    "product_paths": [photo["photo_path"] for photo in group["photos"]],
-                    "model_path": model["photo_path"],
+                    "model_name": Path(photo["name"]).stem,
+                    "product_paths": [item["photo_path"] for item in group["photos"]],
+                    "model_path": photo["photo_path"],
                     "logo_name": logo["name"],
                     "logo_path": logo["photo_path"],
                 }

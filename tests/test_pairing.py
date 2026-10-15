@@ -5,6 +5,7 @@ from pathlib import Path
 from product_shoot.pairing import (
     expand_generate_work_items,
     expand_try_on_work_items,
+    group_models,
     group_products,
     pair_models,
 )
@@ -104,64 +105,110 @@ def test_group_products_keeps_different_stems_in_shared_folder_separate(
     assert [group["id"] for group in groups] == ["white", "block", "light-gray"]
 
 
-def test_pair_models_matches_by_index_and_cycles_products() -> None:
-    """模特数不少于商品件数时，按下标配对，商品不够从头循环。"""
-    models = [
-        {"name": "m1", "photo_path": Path("m1.jpg")},
-        {"name": "m2", "photo_path": Path("m2.jpg")},
-        {"name": "m3", "photo_path": Path("m3.jpg")},
+def test_group_models_uses_each_subdirectory_as_a_group(tmp_path: Path) -> None:
+    """每个子目录是一组参考模特图。"""
+    a1 = write_png(tmp_path / "a1.jpg")
+    a2 = write_png(tmp_path / "a2.jpg")
+    b1 = write_png(tmp_path / "b1.jpg")
+
+    groups = group_models(
+        [
+            _photo(a1, "reference/model1/a1.jpg"),
+            _photo(a2, "reference/model1/a2.jpg"),
+            _photo(b1, "reference/model2/b1.jpg"),
+        ]
+    )
+
+    assert [group["id"] for group in groups] == ["model1", "model2"]
+    assert [item["photo_path"] for item in groups[0]["photos"]] == [a1, a2]
+    assert [item["photo_path"] for item in groups[1]["photos"]] == [b1]
+
+
+def test_group_models_treats_flat_images_as_one_group(tmp_path: Path) -> None:
+    """文件夹里没有子目录、全是图片时，全部算一组。"""
+    m1 = write_png(tmp_path / "m1.png")
+    m2 = write_png(tmp_path / "m2.png")
+
+    groups = group_models([_photo(m1, "m1.png"), _photo(m2, "m2.png")])
+
+    assert [group["id"] for group in groups] == ["models"]
+    assert [item["photo_path"] for item in groups[0]["photos"]] == [m1, m2]
+
+
+def test_group_models_treats_shared_parent_folder_as_one_group(tmp_path: Path) -> None:
+    """同一层目录下没有再分子目录时，该目录内全部算一组。"""
+    m1 = write_png(tmp_path / "m1.png")
+    m2 = write_png(tmp_path / "m2.png")
+
+    groups = group_models(
+        [
+            _photo(m1, "reference/m1.png"),
+            _photo(m2, "reference/m2.png"),
+        ]
+    )
+
+    assert [group["id"] for group in groups] == ["reference"]
+    assert [item["photo_path"] for item in groups[0]["photos"]] == [m1, m2]
+
+
+def test_pair_models_cycles_products_across_photos_in_a_group() -> None:
+    """一组里每张参考图配一件商品，商品不够从头循环。"""
+    photos = [
+        {"name": "a1.jpg", "photo_path": Path("a1.jpg")},
+        {"name": "a2.jpg", "photo_path": Path("a2.jpg")},
+        {"name": "a3.jpg", "photo_path": Path("a3.jpg")},
     ]
     groups = [
-        {"id": "white", "photos": [{"name": "white.png", "photo_path": Path("white.png")}]},
-        {"id": "black", "photos": [{"name": "black.png", "photo_path": Path("black.png")}]},
+        {"id": "A", "photos": []},
+        {"id": "B", "photos": []},
     ]
 
-    pairs = pair_models(models, groups)
+    pairs = pair_models(photos, groups)
 
     assert [(model["name"], group["id"]) for model, group in pairs] == [
-        ("m1", "white"),
-        ("m2", "black"),
-        ("m3", "white"),
+        ("a1.jpg", "A"),
+        ("a2.jpg", "B"),
+        ("a3.jpg", "A"),
     ]
 
 
-def test_pair_models_keeps_one_row_per_reference_when_more_products() -> None:
-    """组合按参考图展开：商品再多也是一张参考图一行，指定仍然生效。"""
-    models = [
-        {"name": "m1", "photo_path": Path("m1.jpg")},
-        {"name": "m2", "photo_path": Path("m2.jpg")},
+def test_pair_models_keeps_one_row_per_photo_when_more_products() -> None:
+    """商品再多也按组内参考图张数展开。"""
+    photos = [
+        {"name": "a1.jpg", "photo_path": Path("a1.jpg")},
+        {"name": "a2.jpg", "photo_path": Path("a2.jpg")},
     ]
     groups = [
-        {"id": "white", "photos": []},
-        {"id": "black", "photos": []},
-        {"id": "navy", "photos": []},
+        {"id": "A", "photos": []},
+        {"id": "B", "photos": []},
+        {"id": "C", "photos": []},
     ]
-    assignments = {"m1": "navy", "m2": "black"}
 
-    pairs = pair_models(models, groups, assignments=assignments)
+    pairs = pair_models(photos, groups)
 
     assert [(model["name"], group["id"]) for model, group in pairs] == [
-        ("m1", "navy"),
-        ("m2", "black"),
+        ("a1.jpg", "A"),
+        ("a2.jpg", "B"),
     ]
 
 
-def test_pair_models_uses_assignments_when_models_cover_products() -> None:
-    """模特数不少于件数时，apparelColorAssignments 覆盖默认下标配对。"""
-    models = [
-        {"name": "m1", "photo_path": Path("m1.jpg")},
-        {"name": "m2", "photo_path": Path("m2.jpg")},
+def test_pair_models_uses_row_assignments() -> None:
+    """指定覆盖组内某一张参考图默认配对的商品。"""
+    photos = [
+        {"name": "a1.jpg", "photo_path": Path("a1.jpg")},
+        {"name": "a2.jpg", "photo_path": Path("a2.jpg")},
     ]
     groups = [
-        {"id": "white", "photos": []},
-        {"id": "black", "photos": []},
+        {"id": "A", "photos": []},
+        {"id": "B", "photos": []},
+        {"id": "C", "photos": []},
     ]
 
-    pairs = pair_models(models, groups, assignments={"m1": "black", "m2": "white"})
+    pairs = pair_models(photos, groups, assignments={"0": "C"})
 
     assert [(model["name"], group["id"]) for model, group in pairs] == [
-        ("m1", "black"),
-        ("m2", "white"),
+        ("a1.jpg", "C"),
+        ("a2.jpg", "B"),
     ]
 
 
@@ -196,44 +243,86 @@ def test_expand_generate_work_items_is_group_by_logo() -> None:
     ]
 
 
-def test_expand_try_on_work_items_is_logo_then_reference() -> None:
-    """工作项按印花第一维、参考图第二维展开。"""
-    models = [
-        {"name": "m1", "photo_path": Path("m1.jpg")},
-        {"name": "m2", "photo_path": Path("m2.jpg")},
+def test_expand_try_on_work_items_one_logo_one_model_group() -> None:
+    """一个 logo 配一组参考图，组内每张参考图配不同商品。"""
+    model_groups = [
+        {
+            "id": "a",
+            "photos": [
+                {"name": "a/a1.jpg", "photo_path": Path("a1.jpg")},
+                {"name": "a/a2.jpg", "photo_path": Path("a2.jpg")},
+            ],
+        },
+        {"id": "b", "photos": [{"name": "b/b1.jpg", "photo_path": Path("b1.jpg")}]},
     ]
     groups = [
         {
-            "id": "white",
+            "id": "A",
             "photos": [
                 {"name": "white-front.png", "photo_path": Path("front.png")},
                 {"name": "white-back.png", "photo_path": Path("back.png")},
             ],
         },
-        {"id": "black", "photos": [{"name": "black.png", "photo_path": Path("black.png")}]},
+        {"id": "B", "photos": [{"name": "black.png", "photo_path": Path("black.png")}]},
+        {"id": "C", "photos": [{"name": "navy.png", "photo_path": Path("navy.png")}]},
     ]
     logos = [
         {"name": "brand", "photo_path": Path("brand.png")},
         {"name": "mark", "photo_path": Path("mark.png")},
     ]
 
-    items = expand_try_on_work_items(logos, models, groups)
+    items = expand_try_on_work_items(logos, model_groups, groups)
     assert [
         (item["logo_name"], item["model_name"], item["product_name"])
         for item in items
     ] == [
-        ("brand", "m1", "white"),
-        ("brand", "m2", "black"),
-        ("mark", "m1", "white"),
-        ("mark", "m2", "black"),
+        ("brand", "a1", "A"),
+        ("brand", "a2", "B"),
+        ("mark", "b1", "A"),
     ]
     assert items[0]["product_paths"] == [Path("front.png"), Path("back.png")]
+    assert items[0]["model_path"] == Path("a1.jpg")
     assert items[0]["logo_path"] == Path("brand.png")
 
 
+def test_expand_try_on_work_items_cycles_model_groups_across_logos() -> None:
+    """logo 多于模特组时，模特组从头循环。"""
+    model_groups = [
+        {"id": "a", "photos": [{"name": "a1.jpg", "photo_path": Path("a1.jpg")}]},
+        {"id": "b", "photos": [{"name": "b1.jpg", "photo_path": Path("b1.jpg")}]},
+    ]
+    groups = [
+        {"id": "A", "photos": [{"name": "A.png", "photo_path": Path("A.png")}]},
+    ]
+    logos = [
+        {"name": "brand", "photo_path": Path("brand.png")},
+        {"name": "mark", "photo_path": Path("mark.png")},
+        {"name": "extra", "photo_path": Path("extra.png")},
+    ]
+
+    items = expand_try_on_work_items(logos, model_groups, groups)
+    assert [
+        (item["logo_name"], item["model_name"], item["product_name"])
+        for item in items
+    ] == [
+        ("brand", "a1", "A"),
+        ("mark", "b1", "A"),
+        ("extra", "a1", "A"),
+    ]
+
+
 def test_expand_try_on_work_items_assignments_are_per_logo() -> None:
-    """每个 logo 下可为同一张参考图指定不同商品。"""
-    models = [{"name": "m1", "photo_path": Path("m1.jpg")}]
+    """每个 logo 下可为组内某一张参考图指定不同商品。"""
+    model_groups = [
+        {
+            "id": "a",
+            "photos": [
+                {"name": "a1.jpg", "photo_path": Path("a1.jpg")},
+                {"name": "a2.jpg", "photo_path": Path("a2.jpg")},
+            ],
+        },
+        {"id": "b", "photos": [{"name": "b1.jpg", "photo_path": Path("b1.jpg")}]},
+    ]
     groups = [
         {"id": "white", "photos": [{"name": "white.png", "photo_path": Path("white.png")}]},
         {"id": "black", "photos": [{"name": "black.png", "photo_path": Path("black.png")}]},
@@ -244,14 +333,15 @@ def test_expand_try_on_work_items_assignments_are_per_logo() -> None:
     ]
     items = expand_try_on_work_items(
         logos,
-        models,
+        model_groups,
         groups,
-        assignments={"brand": {"m1": "black"}, "mark": {"m1": "white"}},
+        assignments={"brand": {"0": "black"}, "mark": {"0": "white"}},
     )
     assert [
         (item["logo_name"], item["model_name"], item["product_name"])
         for item in items
     ] == [
-        ("brand", "m1", "black"),
-        ("mark", "m1", "white"),
+        ("brand", "a1", "black"),
+        ("brand", "a2", "black"),
+        ("mark", "b1", "white"),
     ]
