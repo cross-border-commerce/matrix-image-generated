@@ -20,6 +20,7 @@ class TryOnJobImage:
     product: str
     model: str
     filename: str
+    logo: str | None = None
 
 
 @dataclass

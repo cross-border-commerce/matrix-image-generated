@@ -13,20 +13,35 @@ class ProductImage(TypedDict):
     path: Path
 
 
+class GenerateWorkItem(TypedDict):
+    product_name: str
+    logo_name: str
+    product_path: Path
+    logo_path: Path
+
+
 class GraphState(TypedDict, total=False):
-    logos: list[Path] | list[ProductPhoto]
-    products: list[Path] | list[ProductPhoto]
     placement: str
+    work_items: list[GenerateWorkItem]
     product_images: list[ProductImage]
 
 
-class TryOnImage(TypedDict):
+class TryOnImage(TypedDict, total=False):
     product_name: str
     model_name: str
+    logo_name: str | None
     path: Path
 
 
+class TryOnWorkItem(TypedDict, total=False):
+    product_name: str
+    model_name: str
+    product_paths: list[Path]
+    model_path: Path
+    logo_name: str | None
+    logo_path: Path | None
+
+
 class TryOnState(TypedDict, total=False):
-    products: list[Path] | list[ProductPhoto]
-    models: list[Path] | list[ProductPhoto]
+    work_items: list[TryOnWorkItem]
     try_on_images: list[TryOnImage]

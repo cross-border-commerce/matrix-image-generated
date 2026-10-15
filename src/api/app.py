@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -10,8 +11,69 @@ from api.jobs import Job, JobImage, JobStore, TryOnJobImage
 from product_shoot.config import DEFAULT_PLACEMENT
 from product_shoot.graph import build_graph, build_try_on_graph
 from product_shoot.nodes.image_edit import ImageEditor, OpenAIImageEditor
-from product_shoot.nodes.ingest import IngestError
+from product_shoot.nodes.ingest import IngestError, ingest, ingest_try_on
 from product_shoot.openai_client import get_openai_client
+from product_shoot.pairing import (
+    expand_generate_work_items,
+    expand_try_on_work_items,
+    group_products,
+    pair_models,
+)
+
+
+def _relative_filename(filename: str | None, fallback: str) -> str:
+    rel = Path(filename or fallback)
+    if rel.is_absolute() or ".." in rel.parts:
+        rel = Path(rel.name)
+    return rel.as_posix()
+
+
+async def _save_uploads(
+    dest_dir: Path,
+    uploads: list[UploadFile],
+    prefix: str,
+) -> list[str]:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    names: list[str] = []
+    for index, upload in enumerate(uploads):
+        rel = _relative_filename(upload.filename, f"{prefix}-{index}.png")
+        dest = dest_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(await upload.read())
+        names.append(rel)
+    return names
+
+
+def _photos(root: Path, folder: str, names: list[str], *, use_stem: bool) -> list[dict]:
+    photos = []
+    for name in names:
+        if not name:
+            continue
+        photos.append(
+            {
+                "name": Path(name).stem if use_stem else name,
+                "photo_path": root / folder / name,
+            }
+        )
+    return photos
+
+
+def _parse_assignments(raw: str | None) -> dict[str, str] | None:
+    if raw is None or not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="apparelColorAssignments must be a JSON object",
+        ) from exc
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=422,
+            detail="apparelColorAssignments must be a JSON object",
+        )
+    return {str(key): str(value) for key, value in data.items()}
 
 
 def create_app(
@@ -52,19 +114,27 @@ def create_app(
         root = job_dir(job_id)
         logo_order = (root / "logo_order.txt").read_text().splitlines()
         product_order = (root / "product_order.txt").read_text().splitlines()
-        logos = [root / "logos" / name for name in logo_order if name]
-        products = [root / "products" / name for name in product_order if name]
+        logo_paths = [root / "logos" / name for name in logo_order if name]
+        product_paths = [root / "products" / name for name in product_order if name]
         output_dir = root / "out"
         try:
+            validated = ingest(
+                logos=logo_paths,
+                products=product_paths,
+                placement=placement,
+            )
+            groups = group_products(
+                _photos(root, "products", product_order, use_stem=False)
+            )
+            work_items = expand_generate_work_items(groups, validated["logos"])
             graph = build_graph(
                 editor=resolve_editor(),
                 output_dir=output_dir,
             )
             result = graph.invoke(
                 {
-                    "logos": logos,
-                    "products": products,
-                    "placement": placement,
+                    "placement": validated["placement"],
+                    "work_items": work_items,
                 }
             )
             images = [
@@ -78,7 +148,7 @@ def create_app(
             store.update(
                 job_id,
                 status="succeeded",
-                placement=result["placement"],
+                placement=validated["placement"],
                 product_images=images,
             )
         except IngestError as exc:
@@ -100,21 +170,9 @@ def create_app(
 
         job = store.create()
         root = job_dir(job.id)
-        (root / "logos").mkdir(parents=True)
-        (root / "products").mkdir(parents=True)
-
-        logo_names: list[str] = []
-        for index, logo in enumerate(logos):
-            dest = root / "logos" / (logo.filename or f"logo-{index}.png")
-            dest.write_bytes(await logo.read())
-            logo_names.append(dest.name)
+        logo_names = await _save_uploads(root / "logos", logos, "logo")
+        product_names = await _save_uploads(root / "products", products, "product")
         (root / "logo_order.txt").write_text("\n".join(logo_names))
-
-        product_names: list[str] = []
-        for index, product in enumerate(products):
-            dest = root / "products" / (product.filename or f"product-{index}.png")
-            dest.write_bytes(await product.read())
-            product_names.append(dest.name)
         (root / "product_order.txt").write_text("\n".join(product_names))
 
         background.add_task(run_job, job.id, placement or DEFAULT_PLACEMENT)
@@ -143,17 +201,20 @@ def create_app(
         return data_dir / "try-on-jobs" / job_id
 
     def serialize_try_on(job: Job) -> dict:
+        images = []
+        for image in job.try_on_images:
+            item = {
+                "product": image.product,
+                "model": image.model,
+                "url": f"/try-on-jobs/{job.id}/files/{image.filename}",
+            }
+            if image.logo:
+                item["logo"] = image.logo
+            images.append(item)
         return {
             "id": job.id,
             "status": job.status,
-            "try_on_images": [
-                {
-                    "product": image.product,
-                    "model": image.model,
-                    "url": f"/try-on-jobs/{job.id}/files/{image.filename}",
-                }
-                for image in job.try_on_images
-            ],
+            "try_on_images": images,
             "error": job.error,
         }
 
@@ -162,20 +223,40 @@ def create_app(
         root = try_on_job_dir(job_id)
         product_order = (root / "product_order.txt").read_text().splitlines()
         model_order = (root / "model_order.txt").read_text().splitlines()
-        products = [root / "products" / name for name in product_order if name]
-        models = [root / "models" / name for name in model_order if name]
+        logo_order_path = root / "logo_order.txt"
+        logo_order = (
+            logo_order_path.read_text().splitlines() if logo_order_path.is_file() else []
+        )
+        assignments_path = root / "assignments.json"
+        assignments = (
+            json.loads(assignments_path.read_text()) if assignments_path.is_file() else None
+        )
+        product_paths = [root / "products" / name for name in product_order if name]
+        model_paths = [root / "models" / name for name in model_order if name]
+        logo_paths = [root / "logos" / name for name in logo_order if name]
         output_dir = root / "out"
         try:
+            ingest_try_on(products=product_paths, models=model_paths)
+            logos = []
+            if logo_paths:
+                logos = ingest(logos=logo_paths, products=product_paths)["logos"]
+            groups = group_products(
+                _photos(root, "products", product_order, use_stem=False)
+            )
+            models = _photos(root, "models", model_order, use_stem=True)
+            pairs = pair_models(models, groups, assignments=assignments)
+            work_items = expand_try_on_work_items(pairs, logos=logos or None)
             graph = build_try_on_graph(
                 editor=resolve_editor(),
                 output_dir=output_dir,
             )
-            result = graph.invoke({"products": products, "models": models})
+            result = graph.invoke({"work_items": work_items})
             images = [
                 TryOnJobImage(
                     product=item["product_name"],
                     model=item["model_name"],
                     filename=Path(item["path"]).name,
+                    logo=item.get("logo_name"),
                 )
                 for item in result["try_on_images"]
             ]
@@ -190,30 +271,28 @@ def create_app(
         background: BackgroundTasks,
         products: list[UploadFile] = File(...),
         models: list[UploadFile] = File(...),
+        logos: list[UploadFile] | None = File(None),
+        apparelColorAssignments: str | None = Form(None),
     ) -> dict:
         if not products:
             raise HTTPException(status_code=422, detail="at least one product photo is required")
         if not models:
             raise HTTPException(status_code=422, detail="at least one model photo is required")
 
+        assignments = _parse_assignments(apparelColorAssignments)
         job = try_on_store.create()
         root = try_on_job_dir(job.id)
-        (root / "products").mkdir(parents=True)
-        (root / "models").mkdir(parents=True)
-
-        product_names: list[str] = []
-        for index, product in enumerate(products):
-            dest = root / "products" / (product.filename or f"product-{index}.png")
-            dest.write_bytes(await product.read())
-            product_names.append(dest.name)
+        product_names = await _save_uploads(root / "products", products, "product")
+        model_names = await _save_uploads(root / "models", models, "model")
         (root / "product_order.txt").write_text("\n".join(product_names))
-
-        model_names: list[str] = []
-        for index, model in enumerate(models):
-            dest = root / "models" / (model.filename or f"model-{index}.png")
-            dest.write_bytes(await model.read())
-            model_names.append(dest.name)
         (root / "model_order.txt").write_text("\n".join(model_names))
+        if logos:
+            logo_names = await _save_uploads(root / "logos", logos, "logo")
+            (root / "logo_order.txt").write_text("\n".join(logo_names))
+        if assignments:
+            (root / "assignments.json").write_text(
+                json.dumps(assignments, ensure_ascii=False)
+            )
 
         background.add_task(run_try_on_job, job.id)
         return serialize_try_on(job)
